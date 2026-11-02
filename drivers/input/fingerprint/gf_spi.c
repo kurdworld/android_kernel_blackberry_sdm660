@@ -20,10 +20,7 @@
   * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
   */
 
-/*
- * Do not define DEBUG here. It turns pr_debug() into an unconditional
- * printk when dynamic debug is disabled.
- */
+#define DEBUG
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/ioctl.h>
@@ -371,7 +368,7 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 
                 for(i = 0; i< ARRAY_SIZE(key_map); i++) {
-				 pr_debug("my key_map[%d].val is %d \n", i,key_map[i].val);
+				 pr_warn("my key_map[%d].val is %d \n", i,key_map[i].val);
                     if(key_map[i].val == gf_key.key){
                         /* MODIFIED-BEGIN by siguo.cheng, 2018-01-15,BUG-5869249*/
                         if (KEY_F1 == gf_key.key) {
@@ -805,7 +802,7 @@ static int gf_suspend(struct platform_device *pdev, pm_message_t state)
 	gfspi_device = spi_get_drvdata(spi);
 	gfspi_ioctl_clk_disable(gfspi_device);
 #endif
-	pr_debug("gf_suspend\n");
+	pr_info(KERN_ERR "gf_suspend_test.\n");
 	return 0;
 }
 
@@ -823,7 +820,7 @@ static int gf_resume(struct platform_device *pdev)
 	gfspi_device = spi_get_drvdata(spi);
 	gfspi_ioctl_clk_enable(gfspi_device);
 #endif
-	pr_debug("gf_resume\n");
+	pr_info(KERN_ERR "gf_resume_test.\n");
 	return 0;
 }
 

@@ -505,3 +505,4 @@ module_init(msm_vfe47_init_module);
 module_exit(msm_vfe47_exit_module);
 MODULE_DESCRIPTION("MSM VFE48 driver");
 MODULE_LICENSE("GPL v2");
+

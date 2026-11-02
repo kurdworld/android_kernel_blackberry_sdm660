@@ -122,8 +122,8 @@ static int aw2027_write(struct aw2027_led *led, u8 reg, u8 val)
 		if(retry_times == 5)
 			break;
 	}while (ret < 0);
-
-	return ret;
+	
+	return ret;	
 }
 
 static int aw2027_read(struct aw2027_led *led, u8 reg, u8 *val)
@@ -232,7 +232,7 @@ static void aw2027_brightness_work(struct work_struct *work)
 		aw2027_write(led, AW2027_REG_GCR2, led->pdata->imax);
 		for (j=0,i=led->id; i; i >>= 1, j++) {
 			if (i & 0x01) {
-				aw2027_write(led, AW2027_REG_LCFG1 + j,
+				aw2027_write(led, AW2027_REG_LCFG1 + j, 
 							(AW2027_LED_MANUAL_MODE_MASK | led->pdata->led_current));
 				aw2027_write(led, AW2027_REG_PWM1 + j, led->cdev.brightness);
 				aw2027_read(led, AW2027_REG_LEDEN, &val);
@@ -277,15 +277,15 @@ static void aw2027_led_blink_set(struct aw2027_led *led, unsigned long blinking)
 	}
 
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
-
+	
 	if (blinking > 0) {
 		aw2027_write(led, AW2027_REG_GCR2, led->pdata->imax);
-		aw2027_write(led, AW2027_REG_LCFG1 + led->id,
+		aw2027_write(led, AW2027_REG_LCFG1 + led->id, 
 					(AW2027_LED_BREATH_MODE_MASK | led->pdata->led_current));
 		aw2027_write(led, AW2027_REG_PWM1 + led->id, led->cdev.brightness);
-		aw2027_write(led, AW2027_REG_LED1T0 + led->id*3,
+		aw2027_write(led, AW2027_REG_LED1T0 + led->id*3, 
 					(led->pdata->rise_time_ms << 4 | led->pdata->hold_time_ms));
-		aw2027_write(led, AW2027_REG_LED1T1 + led->id*3,
+		aw2027_write(led, AW2027_REG_LED1T1 + led->id*3, 
 					(led->pdata->fall_time_ms << 4 | led->pdata->off_time_ms));
 		aw2027_read(led, AW2027_REG_LEDEN, &val);
 		aw2027_write(led, AW2027_REG_LEDEN, val | (1 << led->id));
@@ -441,7 +441,7 @@ static int aw2027_check_chipid(struct aw2027_led *led)
 		if (val == AW2027_CHIPID)
 			return 0;
 	}
-
+	
 	return -EINVAL;
 }
 

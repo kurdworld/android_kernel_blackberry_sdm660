@@ -113,8 +113,6 @@ struct msm_asoc_mach_data {
 	struct device_node *comp_gpio_p; /* used by pinctrl API */
 	struct device_node *dmic_gpio_p; /* used by pinctrl API */
 	struct device_node *ext_spk_gpio_p; /* used by pinctrl API */
-	int hph_ext_pa_gpio; /* used by gpio driver API */
-	struct device_node *hph_ext_pa_gpio_p; /* used by pinctrl API */
 	struct device_node *mi2s_gpio_p[MI2S_MAX]; /* used by pinctrl API */
 	struct snd_soc_codec *codec;
 	struct sdm660_codec sdm660_codec_fn;
@@ -157,6 +155,4 @@ int msm_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 				     struct snd_pcm_hw_params *params);
 int msm_tdm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				      struct snd_pcm_hw_params *params);
-int msm_config_hph_ext_switch(struct snd_soc_component *component,
-			      int enable);
 #endif

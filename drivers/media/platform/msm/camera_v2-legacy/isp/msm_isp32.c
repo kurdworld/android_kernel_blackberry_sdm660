@@ -1545,3 +1545,4 @@ module_init(msm_vfe32_init_module);
 module_exit(msm_vfe32_exit_module);
 MODULE_DESCRIPTION("MSM VFE32 driver");
 MODULE_LICENSE("GPL v2");
+

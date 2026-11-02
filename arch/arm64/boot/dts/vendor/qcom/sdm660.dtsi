@@ -314,7 +314,7 @@
                     dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/system";
                     type = "ext4";
                     mnt_flags = "ro,barrier=1,discard";
-                    fsmgr_flags = "wait";
+                    fsmgr_flags = "wait,first_stage_mount";
                     status = "ok";
                 };
                 vendor {
@@ -322,7 +322,7 @@
                     dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/vendor";
                     type = "ext4";
                     mnt_flags = "ro,barrier=1,discard";
-                    fsmgr_flags = "wait";
+                    fsmgr_flags = "wait,first_stage_mount";
                     status = "ok";
                 };
                 /* [FEATURE]-MODIFY-END by TCTNB.linjian.xiang */
@@ -2889,7 +2889,6 @@
 						"default";
 		pinctrl-0 = <&gpio_key_active &key_vol_up_default>;
 		pinctrl-1 = <&gpio_key_suspend>;
-		pinctrl-2 = <&gpio_key_active &key_vol_up_default>;
 
 		camera_focus {
 			label = "camera_focus";

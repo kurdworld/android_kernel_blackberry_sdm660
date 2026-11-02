@@ -1683,13 +1683,7 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_UNBLANK, NULL,
 			CTL_INTF_EVENT_FLAG_DEFAULT);
-               if (rc) {
-                       pr_warn("intf %d unblank error (%d)\n",
-                                       ctl->intf_num, rc);
-                       video_vsync_irq_disable(ctl);
-                       ctx->wait_pending = 0;
-                       return rc;
-               }
+		WARN(rc, "intf %d unblank error (%d)\n", ctl->intf_num, rc);
 
 		pr_debug("enabling timing gen for intf=%d\n", ctl->intf_num);
 

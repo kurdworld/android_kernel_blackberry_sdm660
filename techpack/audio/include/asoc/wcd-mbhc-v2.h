@@ -447,8 +447,6 @@ struct wcd_mbhc_config {
 	bool moisture_duty_cycle_en;
 	struct usbc_ana_audio_config usbc_analog_cfg;
 	bool fsa_enable;
-	int (*codec_hph_switch_cb)(struct snd_soc_component *component,
-				   int enable);
 };
 
 struct wcd_mbhc_intr {

@@ -22,15 +22,7 @@
 #define DIAG_GET_MD_DEVICE_SIG_MASK(proc) (0x100000 * (1 << proc))
 /* tracks which peripheral is undergoing SSR */
 static uint16_t reg_dirty[NUM_PERIPHERALS];
-/* The SDM660 firmware uses the legacy modem/WLAN packet tags. */
-#define DIAG_ID_SDM660_MODEM 2
-#define DIAG_ID_SDM660_WLAN 3
-#ifdef CONFIG_ARCH_SDM660
-/* Reserve both IDs before any peripheral registers. */
-static uint8_t diag_id = DIAG_ID_SDM660_WLAN;
-#else
 static uint8_t diag_id = DIAG_ID_APPS;
-#endif
 
 static void diag_mask_update_work_fn(struct work_struct *work)
 {
@@ -891,6 +883,7 @@ static void process_diagid(uint8_t *buf, uint32_t len,
 	if (diag_query_diag_id(process_name, &local_diag_id)) {
 		/* Do nothing in this if block */
 	} else {
+		diag_id++;
 		new_request = 1;
 		pd_val = diag_query_pd(process_name);
 		if (pd_val < 0) {
@@ -898,24 +891,15 @@ static void process_diagid(uint8_t *buf, uint32_t len,
 			process_name);
 			return;
 		}
-		if (IS_ENABLED(CONFIG_ARCH_SDM660) &&
-			peripheral == PERIPHERAL_MODEM &&
-			pd_val == PERIPHERAL_MODEM)
-			local_diag_id = DIAG_ID_SDM660_MODEM;
-		else if (IS_ENABLED(CONFIG_ARCH_SDM660) &&
-			peripheral == PERIPHERAL_MODEM && pd_val == UPD_WLAN)
-			local_diag_id = DIAG_ID_SDM660_WLAN;
-		else
-			local_diag_id = ++diag_id;
-
-		diag_add_diag_id_to_list(local_diag_id, process_name,
+		diag_add_diag_id_to_list(diag_id, process_name,
 			pd_val, peripheral);
 		if (diagid_v2_feature_mask) {
-			diag_add_fmask_to_diagid_table(local_diag_id,
+			diag_add_fmask_to_diagid_table(diag_id,
 				pd_feature_mask);
-			process_diagid_v2_feature_mask(local_diag_id,
+			process_diagid_v2_feature_mask(diag_id,
 				pd_feature_mask);
 		}
+		local_diag_id = diag_id;
 	}
 
 	root_str = strnstr(process_name, DIAG_ID_ROOT_STRING,
@@ -927,9 +911,7 @@ static void process_diagid(uint8_t *buf, uint32_t len,
 				ch_type == TYPE_DCI_CMD)
 				continue;
 			fwd_info = &peripheral_info[ch_type][peripheral];
-			/* Reserve the root slot even if a user PD registers first. */
-			if (!fwd_info->num_pd)
-				fwd_info->num_pd = 1;
+			fwd_info->num_pd++;
 
 			if (root_str) {
 				fwd_info->root_diag_id.diagid_val =
@@ -938,9 +920,8 @@ static void process_diagid(uint8_t *buf, uint32_t len,
 					process_name;
 				fwd_info->root_diag_id.pd = pd_val;
 			} else {
-				i = fwd_info->num_pd - 1;
-				if (i < MAX_PERIPHERAL_UPD) {
-					fwd_info->num_pd++;
+				i = fwd_info->num_pd - 2;
+				if (i >= 0 && i < MAX_PERIPHERAL_UPD) {
 					fwd_info->upd_diag_id[i].diagid_val =
 						local_diag_id;
 					fwd_info->upd_diag_id[i].reg_str =

@@ -2411,3 +2411,4 @@ module_init(msm_vfe40_init_module);
 module_exit(msm_vfe40_exit_module);
 MODULE_DESCRIPTION("MSM VFE40 driver");
 MODULE_LICENSE("GPL v2");
+

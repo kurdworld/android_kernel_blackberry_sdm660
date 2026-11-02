@@ -865,3 +865,4 @@ int msm_camera_hw_write_dt_reg_settings(void __iomem *base,
 		pr_err("%s: Failed dt reg setting write\n", __func__);
 	return rc;
 }
+

@@ -157,7 +157,7 @@ static int32_t msm_cpp_reset_vbif_and_load_fw(struct cpp_device *cpp_dev);
 	qcmd;			 \
 })
 
-#define MSM_CPP_MAX_TIMEOUT_TRIAL 3
+#define MSM_CPP_MAX_TIMEOUT_TRIAL 1
 
 struct msm_cpp_timer_data_t {
 	struct cpp_device *cpp_dev;
@@ -701,7 +701,7 @@ static int32_t msm_cpp_poll_rx_empty(void __iomem *cpp_base)
 	if (retry < MSM_CPP_POLL_RETRIES) {
 		CPP_LOW("Poll rx empty\n");
 	} else {
-		pr_warn_ratelimited("CPP: Poll rx empty timeout, continuing\n");
+		pr_err("Poll rx empty failed\n");
 		rc = -EINVAL;
 	}
 	return rc;
@@ -952,7 +952,7 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 	if (irq_status & 0x8) {
 		tx_level = msm_camera_io_r(cpp_dev->base +
 			MSM_CPP_MICRO_FIFO_TX_STAT) >> 2;
-		if (tx_level <= MSM_CPP_TX_FIFO_LEVEL) {
+		if (tx_level < MSM_CPP_TX_FIFO_LEVEL) {
 			for (i = 0; i < tx_level; i++) {
 				tx_fifo[i] = msm_camera_io_r(cpp_dev->base +
 					MSM_CPP_MICRO_FIFO_TX_DATA);
@@ -984,7 +984,35 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 
 		tasklet_schedule(&cpp_dev->cpp_tasklet);
 	} else if (irq_status & 0x7C0) {
-		/* Skip debug register reads - burns CPU at 10K IRQ/sec */
+		pr_debug("irq_status: 0x%x\n", irq_status);
+		pr_debug("DEBUG_SP: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x40));
+		pr_debug("DEBUG_T: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x44));
+		pr_debug("DEBUG_N: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x48));
+		pr_debug("DEBUG_R: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x4C));
+		pr_debug("DEBUG_OPPC: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x50));
+		pr_debug("DEBUG_MO: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x54));
+		pr_debug("DEBUG_TIMER0: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x60));
+		pr_debug("DEBUG_TIMER1: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x64));
+		pr_debug("DEBUG_GPI: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x70));
+		pr_debug("DEBUG_GPO: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x74));
+		pr_debug("DEBUG_T0: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x80));
+		pr_debug("DEBUG_R0: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x84));
+		pr_debug("DEBUG_T1: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x88));
+		pr_debug("DEBUG_R1: 0x%x\n",
+			msm_camera_io_r(cpp_dev->base + 0x8C));
 	}
 err:
 	msm_camera_io_w(irq_status, cpp_dev->base + MSM_CPP_MICRO_IRQGEN_CLR);
@@ -1067,7 +1095,7 @@ static int cpp_init_hardware(struct cpp_device *cpp_dev)
 			goto clk_failed;
 		}
 	}
-	/* Skip early bandwidth update - breaks CPP micro on 4.19 */
+	msm_cpp_update_bandwidth(cpp_dev, 0x1000, 0x1000);
 	rc = msm_camera_clk_enable(&cpp_dev->pdev->dev, cpp_dev->clk_info,
 			cpp_dev->cpp_clk, cpp_dev->num_clks, true);
 	if (rc < 0) {
@@ -1459,6 +1487,8 @@ static int cpp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	uint32_t i;
 	int rc = -1;
+	int counter = 0;
+	u32 result = 0;
 	struct cpp_device *cpp_dev = NULL;
 	struct msm_device_queue *processing_q = NULL;
 	struct msm_device_queue *eventData_q = NULL;
@@ -1546,7 +1576,48 @@ static int cpp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		/* clear IRQ status */
 		msm_camera_io_w(0xFFFFF, cpp_dev->cpp_hw_base + 0x14);
 
-		/* Skip AXI/firmware reset in close_node - not in 4.4, breaks micro */
+		/* MMSS_A_CPP_AXI_CMD = 0x16C, reset 0x1*/
+		msm_camera_io_w(0x1, cpp_dev->cpp_hw_base + 0x16C);
+
+		while (counter < MSM_CPP_POLL_RETRIES) {
+			result = msm_camera_io_r(cpp_dev->cpp_hw_base + 0x10);
+			if (result & 0x2)
+				break;
+			/*
+			 * Below usleep values are chosen based on experiments
+			 * and this was the smallest number which works. This
+			 * sleep is needed to leave enough time for hardware
+			 * to update status register.
+			 */
+			usleep_range(200, 250);
+			counter++;
+		}
+
+		pr_debug("CPP AXI done counter %d result 0x%x\n",
+			counter, result);
+
+		/* clear IRQ status */
+		msm_camera_io_w(0xFFFFF, cpp_dev->cpp_hw_base + 0x14);
+		counter = 0;
+		/* MMSS_A_CPP_RST_CMD_0 = 0x8, firmware reset = 0x3DF77 */
+		msm_camera_io_w(0x3DF77, cpp_dev->cpp_hw_base + 0x8);
+
+		while (counter < MSM_CPP_POLL_RETRIES) {
+			result = msm_camera_io_r(cpp_dev->cpp_hw_base + 0x10);
+			if (result & 0x1)
+				break;
+			/*
+			 * Below usleep values are chosen based on experiments
+			 * and this was the smallest number which works. This
+			 * sleep is needed to leave enough time for hardware
+			 * to update status register.
+			 */
+			usleep_range(200, 250);
+			counter++;
+		}
+		pr_debug("CPP reset done counter %d result 0x%x\n",
+			counter, result);
+
 		msm_camera_io_w(0x0, cpp_dev->base + MSM_CPP_MICRO_CLKEN_CTL);
 		msm_cpp_clear_timer(cpp_dev);
 		cpp_release_hardware(cpp_dev);
@@ -1852,12 +1923,8 @@ static void msm_cpp_do_timeout_work(struct work_struct *work)
 
 	if (cpp_dev->timeout_trial_cnt >=
 		cpp_dev->max_timeout_trial_cnt) {
-		pr_warn("CPP: max trial reached, resetting hardware\n");
+		pr_warn("Max trial reached\n");
 		msm_cpp_flush_queue_and_release_buffer(cpp_dev, queue_len);
-		/* Reset CPP micro to recover from stall.
-		 * This reloads firmware and restores operation. */
-		msm_cpp_reset_vbif_and_load_fw(cpp_dev);
-		cpp_dev->timeout_trial_cnt = 0;
 		msm_cpp_set_micro_irq_mask(cpp_dev, 1, 0x8);
 		goto end;
 	}
@@ -2011,12 +2078,9 @@ static int msm_cpp_send_frame_to_hardware(struct cpp_device *cpp_dev,
 
 		rc = msm_cpp_poll_rx_empty(cpp_dev->base);
 		if (rc) {
-			/* CPP micro stalled on shared IOMMU domain (4.19).
-			 * Don't abort - just warn and continue. The micro
-			 * will eventually drain the FIFO. Aborting causes
-			 * preview freeze which is worse than a slow frame. */
-			pr_warn_ratelimited("CPP: rx poll timeout, continuing\n");
-			rc = 0;
+			pr_err("%s:%d: Scheduling payload failed %d\n",
+				__func__, __LINE__, rc);
+			goto dequeue_frame;
 		}
 		msm_cpp_write(0x6, cpp_dev->base);
 		fifo_counter++;
@@ -4634,7 +4698,7 @@ static int cpp_probe(struct platform_device *pdev)
 		goto bus_de_init;
 
 	media_entity_pads_init(&cpp_dev->msm_sd.sd.entity, 0, NULL);
-	cpp_dev->msm_sd.sd.entity.function = MSM_CAMERA_SUBDEV_CPP;
+	cpp_dev->msm_sd.sd.entity.group_id = MSM_CAMERA_SUBDEV_CPP;
 	cpp_dev->msm_sd.sd.entity.name = pdev->name;
 	cpp_dev->msm_sd.close_seq = MSM_SD_CLOSE_3RD_CATEGORY;
 	msm_sd_register(&cpp_dev->msm_sd);
@@ -4646,7 +4710,7 @@ static int cpp_probe(struct platform_device *pdev)
 #endif
 
 	cpp_dev->msm_sd.sd.devnode->fops = &msm_cpp_v4l2_subdev_fops;
-
+	cpp_dev->msm_sd.sd.entity.revision = cpp_dev->msm_sd.sd.devnode->num;
 
 	msm_camera_io_w(0x0, cpp_dev->base +
 					   MSM_CPP_MICRO_IRQGEN_MASK);
@@ -4701,6 +4765,7 @@ cpp_probe_init_error:
 	media_entity_cleanup(&cpp_dev->msm_sd.sd.entity);
 	msm_sd_unregister(&cpp_dev->msm_sd);
 get_reset_err:
+	reset_control_put(cpp_dev->micro_iface_reset);
 get_reg_err:
 	msm_camera_put_clk_info(pdev, &cpp_dev->clk_info, &cpp_dev->cpp_clk,
 		cpp_dev->num_clks);
@@ -4760,6 +4825,8 @@ static int cpp_device_remove(struct platform_device *dev)
 	msm_camera_unregister_bus_client(CAM_BUS_CLIENT_CPP);
 	mutex_destroy(&cpp_dev->mutex);
 	kfree(cpp_dev->work);
+
+	reset_control_put(cpp_dev->micro_iface_reset);
 
 	destroy_workqueue(cpp_dev->timer_wq);
 	kfree(cpp_dev->cpp_clk);
