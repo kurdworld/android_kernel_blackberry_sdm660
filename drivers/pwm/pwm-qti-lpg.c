@@ -632,6 +632,43 @@ unlock:
 	return rc;
 }
 
+/*
+ * qpnp_lpg_scale_pattern - rewrite the LUT at a fraction of its programmed
+ * percentages, so a HAL can dim the breath pattern to the requested strength
+ * without touching the DT default.
+ */
+int qpnp_lpg_scale_pattern(struct pwm_device *pwm, u32 scale_255)
+{
+	struct qpnp_lpg_channel *lpg;
+	u32 *scaled;
+	u32 length;
+	int i, rc;
+
+	if (!pwm || !pwm->chip)
+		return -EINVAL;
+
+	lpg = pwm_dev_to_qpnp_lpg(pwm->chip, pwm);
+	if (!lpg || !lpg->ramp_config.pattern)
+		return -ENODEV;
+
+	if (scale_255 > 255)
+		scale_255 = 255;
+
+	length = lpg->ramp_config.pattern_length;
+	scaled = kcalloc(length, sizeof(*scaled), GFP_KERNEL);
+	if (!scaled)
+		return -ENOMEM;
+
+	for (i = 0; i < length; i++)
+		scaled[i] = lpg->ramp_config.pattern[i] * scale_255 / 255;
+
+	rc = qpnp_lpg_set_lut_pattern(lpg, scaled, length);
+	kfree(scaled);
+
+	return rc;
+}
+EXPORT_SYMBOL(qpnp_lpg_scale_pattern);
+
 static int qpnp_lpg_set_ramp_config(struct qpnp_lpg_channel *lpg)
 {
 	struct lpg_ramp_config *ramp = &lpg->ramp_config;
@@ -1738,6 +1775,28 @@ int qpnp_lpg_set_step_ms(struct pwm_device *pwm, u32 step_ms)
 	return qpnp_lpg_set_ramp_config(lpg);
 }
 EXPORT_SYMBOL(qpnp_lpg_set_step_ms);
+
+/*
+ * qpnp_lpg_set_pause_counts - change how long the ramp holds at the high and
+ * low LUT entries. Used by leds-qti-tri-led to shape the on/off ratio of the
+ * breath pattern.
+ */
+int qpnp_lpg_set_pause_counts(struct pwm_device *pwm, u32 hi, u32 lo)
+{
+	struct qpnp_lpg_channel *lpg;
+
+	if (!pwm || !pwm->chip)
+		return -EINVAL;
+
+	lpg = pwm_dev_to_qpnp_lpg(pwm->chip, pwm);
+	if (!lpg)
+		return -ENODEV;
+
+	lpg->ramp_config.pause_hi_count = hi > 255 ? 255 : (u8)hi;
+	lpg->ramp_config.pause_lo_count = lo > 255 ? 255 : (u8)lo;
+	return qpnp_lpg_set_ramp_config(lpg);
+}
+EXPORT_SYMBOL(qpnp_lpg_set_pause_counts);
 
 u32 qpnp_lpg_get_pattern_length(struct pwm_device *pwm)
 {

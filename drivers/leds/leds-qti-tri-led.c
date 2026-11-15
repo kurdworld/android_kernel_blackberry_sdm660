@@ -9,6 +9,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/leds.h>
+#include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/nvmem-consumer.h>
@@ -68,6 +69,8 @@ struct qpnp_led_dev {
 
 /* From drivers/pwm/pwm-qti-lpg.c */
 extern int qpnp_lpg_set_step_ms(struct pwm_device *pwm, u32 step_ms);
+extern int qpnp_lpg_set_pause_counts(struct pwm_device *pwm, u32 hi, u32 lo);
+extern int qpnp_lpg_scale_pattern(struct pwm_device *pwm, u32 scale_255);
 extern u32 qpnp_lpg_get_pattern_length(struct pwm_device *pwm);
 
 struct qpnp_tri_led_chip {
@@ -364,9 +367,13 @@ static ssize_t breath_show(struct device *dev, struct device_attribute *attr,
 	return snprintf(buf, PAGE_SIZE, "%d\n", led->led_setting.breath);
 }
 
+#define TRILED_PAUSE_HI	2
+
 static int qpnp_led_apply_delay(struct qpnp_led_dev *led)
 {
 	u32 length, total, step;
+	u32 pause_lo;
+	u64 on_steps, total_steps;
 
 	if (!led->delay_on_ms || !led->delay_off_ms)
 		return 0;
@@ -375,13 +382,28 @@ static int qpnp_led_apply_delay(struct qpnp_led_dev *led)
 	if (!length)
 		return 0;
 
-	/* With ramp-toggle, total cycle = 2 * length * step_ms.
-	 * total = on + off, so step = (on + off) / (2 * length). */
+	/*
+	 * The LPG walks the LUT up and down again (ramp-toggle), holding the
+	 * high and low entries for pause_hi/pause_lo steps. The light is on
+	 * for the up-ramp, the high pause and the down-ramp, and off only for
+	 * the low pause. Derive the low pause from the requested off/on ratio
+	 * so the selected pulse lengths are actually respected instead of
+	 * always giving an on == off cycle.
+	 */
+	on_steps = 2ULL * length + TRILED_PAUSE_HI;
+	pause_lo = div64_u64(on_steps * led->delay_off_ms, led->delay_on_ms);
+	if (pause_lo > 255)
+		pause_lo = 255;
+	if (!pause_lo)
+		pause_lo = 1;
+
+	total_steps = on_steps + pause_lo;
 	total = led->delay_on_ms + led->delay_off_ms;
-	step = total / (2 * length);
+	step = div64_u64(total, total_steps);
 	if (!step)
 		step = 1;
 
+	qpnp_lpg_set_pause_counts(led->pwm_dev, TRILED_PAUSE_HI, pause_lo);
 	return qpnp_lpg_set_step_ms(led->pwm_dev, step);
 }
 
@@ -470,13 +492,19 @@ static ssize_t breath_store(struct device *dev, struct device_attribute *attr,
 
 	led->led_setting.blink = false;
 	led->led_setting.breath = breath;
-	led->led_setting.brightness = breath ? LED_FULL : LED_OFF;
+	/* Keep the strength the HAL programmed before enabling breath. */
+	if (breath && !led->led_setting.brightness)
+		led->led_setting.brightness = LED_FULL;
+	else if (!breath)
+		led->led_setting.brightness = LED_OFF;
 	rc = qpnp_tri_led_set(led);
 	if (rc < 0)
 		dev_err(led->chip->dev, "Set led failed for %s, rc=%d\n",
 				led->label, rc);
-	else if (breath)
+	else if (breath) {
+		qpnp_lpg_scale_pattern(led->pwm_dev, led->led_setting.brightness);
 		qpnp_led_apply_delay(led);
+	}
 
 unlock:
 	mutex_unlock(&led->lock);
